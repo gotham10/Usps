@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 import httpx
+from bs4 import BeautifulSoup
 import re
 
 app = FastAPI()
@@ -19,48 +20,71 @@ async def track_usps(tracking_number: str):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to fetch tracking info: {e}")
 
-    # Try to detect an invalid number (fallback)
+    # Check for invalid tracking number
     if "The Postal Service could not locate the tracking information" in html:
         raise HTTPException(status_code=404, detail="Tracking number not found or invalid")
 
-    tracking_num = extract_tag_text(html, r'<span class="tracking-number">\s*(.*?)\s*</span>') or tracking_number
-    status_title = extract_tag_text(html, r'<h3[^>]*>(.*?)</h3>')
-    detailed_status = extract_tag_text(html, r'<p class="banner-content">(.*?)</p>')
+    soup = BeautifulSoup(html, 'html.parser')
 
-    day = extract_tag_text(html, r'<em class="day">(.*?)</em>')
-    date = extract_tag_text(html, r'<strong class="date">(.*?)</strong>')
-    month_year = extract_tag_text(html, r'<span class="month_year">(.*?)</span>')
-    time_val = extract_tag_text(html, r'<strong class="time">(.*?)</strong>')
+    tracking_data = {}
 
-    history_pattern = re.findall(
-        r'<div class="tb-step[^"]*">.*?<p class="tb-status(?:-detail)?">(.*?)</p>.*?<p class="tb-location">(.*?)</p>.*?<p class="tb-date">(.*?)</p>',
-        html, re.DOTALL
-    )
+    # Extracting tracking number
+    tracking_number_span = soup.find('span', class_='tracking-number')
+    tracking_data['tracking_number'] = tracking_number_span.text.strip() if tracking_number_span else None
 
-    history = []
-    for status, location, dt in history_pattern:
-        history.append({
-            "status": clean_text(status),
-            "location": clean_text(location),
-            "datetime": clean_text(dt)
-        })
+    # Extracting delivery information (status, ETA, etc.)
+    banner_div = soup.find('div', class_='latest-update-banner-wrapper')
+    if banner_div:
+        delivery_info = {}
+        header = banner_div.find('h3')
+        if header:
+            delivery_info['status_title'] = header.text.strip().replace(':', '')
 
-    return {
-        "tracking_number": tracking_num,
-        "expected_delivery": {
-            "status_title": clean_text(status_title),
-            "detailed_status": clean_text(detailed_status),
-            "day": clean_text(day),
-            "date": clean_text(date),
-            "month_year": clean_text(month_year),
-            "time": clean_text(time_val)
-        },
-        "tracking_history": history
-    }
+        eta_wrap = banner_div.find('span', class_='eta_wrap')
+        if eta_wrap:
+            day = eta_wrap.find('em', class_='day')
+            date = eta_wrap.find('strong', class_='date')
+            month_year = eta_wrap.find('span', class_='month_year')
+            time_val = eta_wrap.find('strong', class_='time')
 
-def extract_tag_text(html, pattern):
-    match = re.search(pattern, html, re.DOTALL)
-    return clean_text(match.group(1)) if match else None
+            delivery_info['day'] = day.text.strip() if day else None
+            delivery_info['date'] = date.text.strip() if date else None
+            delivery_info['month_year'] = ' '.join(month_year.text.split()) if month_year else None
+            delivery_info['time'] = re.sub(r'\s+', ' ', time_val.text).strip() if time_val else None
+        
+        banner_content = banner_div.find('p', class_='banner-content')
+        delivery_info['detailed_status'] = banner_content.text.strip() if banner_content else None
+        tracking_data['expected_delivery'] = delivery_info
+    else:
+        tracking_data['expected_delivery'] = None
 
-def clean_text(text):
-    return re.sub(r'\s+', ' ', text).strip() if text else None
+    # Extracting tracking history
+    tracking_history = []
+    progress_bar_container = soup.find('div', class_='tracking-progress-bar-status-container')
+    if progress_bar_container:
+        steps = progress_bar_container.find_all('div', class_='tb-step')
+        for step in steps:
+            if 'toggle-history-container' in step.get('class', []):
+                continue
+            
+            history_item = {}
+            status_detail_p = step.find('p', class_='tb-status-detail')
+            if not status_detail_p:
+                status_detail_p = step.find('p', class_='tb-status')
+
+            location_p = step.find('p', class_='tb-location')
+            date_time_p = step.find('p', class_='tb-date')
+            
+            if status_detail_p:
+                history_item['status'] = status_detail_p.text.strip()
+            else:
+                continue
+
+            history_item['location'] = ' '.join(location_p.text.split()) if location_p else None
+            history_item['datetime'] = ' '.join(date_time_p.text.split()) if date_time_p else None
+            
+            tracking_history.append(history_item)
+
+    tracking_data['tracking_history'] = tracking_history
+
+    return tracking_data
