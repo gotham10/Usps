@@ -22,21 +22,17 @@ async def track_usps(tracking_number: str):
     if "Tracking Number:" not in html:
         raise HTTPException(status_code=404, detail="Tracking number not found or invalid")
 
-    # Extract tracking number
     tracking_match = re.search(r'<span class="tracking-number">\s*(.*?)\s*</span>', html)
     tracking_num = tracking_match.group(1) if tracking_match else tracking_number
 
-    # Extract status title and delivery details
     status_title = extract_tag_text(html, r'<h3[^>]*>(.*?)</h3>')
     detailed_status = extract_tag_text(html, r'<p class="banner-content">(.*?)</p>')
 
-    # Date details (optional)
     day = extract_tag_text(html, r'<em class="day">(.*?)</em>')
     date = extract_tag_text(html, r'<strong class="date">(.*?)</strong>')
     month_year = extract_tag_text(html, r'<span class="month_year">(.*?)</span>')
     time_val = extract_tag_text(html, r'<strong class="time">(.*?)</strong>')
 
-    # Tracking History
     history_pattern = re.findall(
         r'<div class="tb-step[^"]*">.*?<p class="tb-status(?:-detail)?">(.*?)</p>.*?<p class="tb-location">(.*?)</p>.*?<p class="tb-date">(.*?)</p>',
         html, re.DOTALL
