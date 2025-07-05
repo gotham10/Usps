@@ -19,12 +19,11 @@ async def track_usps(tracking_number: str):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to fetch tracking info: {e}")
 
-    if "Tracking Number:" not in html:
+    # Try to detect an invalid number (fallback)
+    if "The Postal Service could not locate the tracking information" in html:
         raise HTTPException(status_code=404, detail="Tracking number not found or invalid")
 
-    tracking_match = re.search(r'<span class="tracking-number">\s*(.*?)\s*</span>', html)
-    tracking_num = tracking_match.group(1) if tracking_match else tracking_number
-
+    tracking_num = extract_tag_text(html, r'<span class="tracking-number">\s*(.*?)\s*</span>') or tracking_number
     status_title = extract_tag_text(html, r'<h3[^>]*>(.*?)</h3>')
     detailed_status = extract_tag_text(html, r'<p class="banner-content">(.*?)</p>')
 
