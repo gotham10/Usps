@@ -1,4 +1,8 @@
-beautifulsoup4
-selenium
-webdriver-manager
+Flask
 requests
+beautifulsoup4
+gunicorn
+cloudscraper
+fastapi
+uvicorn
+httpx
