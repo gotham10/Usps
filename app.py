@@ -3,6 +3,7 @@ import requests
 from bs4 import BeautifulSoup
 import json
 import re
+import os
 
 def scrape_usps_tracking(tracking_number):
     url = f"https://tools.usps.com/go/TrackConfirmAction?qtc_tLabels1={tracking_number}"
@@ -105,5 +106,7 @@ def get_tracking_data(tracking_number):
          return jsonify({"error": "Tracking information not found or failed to parse. The USPS site may be blocking the request."}), 404
 
     return jsonify(data)
+
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+    port = int(os.environ.get("PORT", 5001))
+    app.run(host='0.0.0.0', port=port)
